@@ -6,7 +6,7 @@ const WEIGHTS = {
   debtToEquity: 0.35,
   interestCoverageRatio: 0.3,
   currentRatio: 0.2,
-  freeCashFlowSign: 0.15,
+  freeCashFlow: 0.15,
 } as const;
 
 /**
@@ -35,17 +35,24 @@ export function scoreFundamental(data: FundamentalData): CategoryScoreResult {
       : 100 - linearScore(data.currentRatio, 1, 2);
   if (crScore === null) missingFactors.push("currentRatio");
 
-  // 自由現金流僅取正負號作粗略風險訊號（轉負代表財務壓力升高）。
-  // TODO: 待資料中補上營收欄位後，改用 FCF Margin 取代此二元判斷。
-  const fcfScore =
-    data.freeCashFlow === null ? null : data.freeCashFlow < 0 ? 80 : 20;
+  // 自由現金流利潤率（FCF / 營收）：-20% 視為嚴重燒錢的高風險（100分），
+  // +20% 視為健康的低風險（0分附近）。缺少營收資料時退回只看 freeCashFlow 正負號的
+  // 粗略判斷（轉負代表財務壓力升高），兩者都缺才算真的缺失。
+  let fcfScore: number | null;
+  if (data.freeCashFlowMargin !== null) {
+    fcfScore = linearScore(-data.freeCashFlowMargin, -20, 20);
+  } else if (data.freeCashFlow !== null) {
+    fcfScore = data.freeCashFlow < 0 ? 80 : 20;
+  } else {
+    fcfScore = null;
+  }
   if (fcfScore === null) missingFactors.push("freeCashFlow");
 
   const score = weightedAverageSkipMissing([
     { value: deScore, weight: WEIGHTS.debtToEquity },
     { value: icrScore, weight: WEIGHTS.interestCoverageRatio },
     { value: crScore, weight: WEIGHTS.currentRatio },
-    { value: fcfScore, weight: WEIGHTS.freeCashFlowSign },
+    { value: fcfScore, weight: WEIGHTS.freeCashFlow },
   ]);
 
   const factors: FactorScore[] = [
@@ -77,13 +84,15 @@ export function scoreFundamental(data: FundamentalData): CategoryScoreResult {
           : `流動比率 ${data.currentRatio} 換算風險分數`,
     },
     {
-      name: "free_cash_flow_sign",
+      name: "free_cash_flow",
       score: fcfScore ?? 50,
-      weight: WEIGHTS.freeCashFlowSign,
+      weight: WEIGHTS.freeCashFlow,
       description:
         fcfScore === null
           ? "缺少自由現金流資料，以中性 50 分代入"
-          : `自由現金流為${data.freeCashFlow! < 0 ? "負" : "正"}，作為粗略風險訊號`,
+          : data.freeCashFlowMargin !== null
+            ? `自由現金流利潤率 ${data.freeCashFlowMargin.toFixed(1)}% 換算風險分數`
+            : `缺少營收資料，退回只看自由現金流為${data.freeCashFlow! < 0 ? "負" : "正"}的粗略判斷`,
     },
   ];
 

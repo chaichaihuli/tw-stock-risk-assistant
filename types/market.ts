@@ -67,6 +67,8 @@ export interface FundamentalData {
   currentRatio: number | null;
   /** 自由現金流（新台幣） */
   freeCashFlow: number | null;
+  /** 自由現金流利潤率（自由現金流 / 營收），百分比；缺少營收資料時為 null，此時 fundamental.ts 會退回只看 freeCashFlow 正負號的粗略判斷 */
+  freeCashFlowMargin: number | null;
   /** 本益比 */
   peRatio: number | null;
   /** 營收年增率，百分比 */

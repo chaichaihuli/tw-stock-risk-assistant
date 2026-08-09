@@ -125,10 +125,51 @@ export async function fetchPriceData(
 }
 
 /**
- * 取得基本面資料。debtToEquity / currentRatio / freeCashFlow / revenueGrowthYoy 取自
- * Yahoo 的 financialData 模組，peRatio 取自 summaryDetail。
+ * 取得計算利息保障倍數與自由現金流利潤率所需的原始數字（EBIT、利息費用、自由現金流、營收）。
  *
- * interestCoverageRatio（利息保障倍數）目前無穩定資料來源，恆為 null。
+ * quoteSummary 的 incomeStatementHistory 模組自 2024 年 11 月起幾乎不回傳資料
+ * （yahoo-finance2 呼叫時會直接印出官方提示改用 fundamentalsTimeSeries），改用這個模組
+ * 取最近一個年度的數據；用 module: "all" 一次拿齊財報三表，比分開呼叫省一次網路請求。
+ * 已實測 2330.TW／2317.TW／2454.TW／6488.TWO 都能正常回傳 EBIT 與利息費用。
+ * 任一數值缺失或整體抓取失敗時回傳全 null，不拋出例外——呼叫端會走既有的缺失值代入機制。
+ */
+async function fetchIncomeAndCashFlowSnapshot(ticker: string): Promise<{
+  ebit: number | null;
+  interestExpense: number | null;
+  freeCashFlow: number | null;
+  totalRevenue: number | null;
+}> {
+  try {
+    const period1 = new Date();
+    period1.setFullYear(period1.getFullYear() - 2);
+
+    const rows = await yahooFinance.fundamentalsTimeSeries(ticker, {
+      period1,
+      type: "annual",
+      module: "all",
+    });
+    const last = rows[rows.length - 1];
+    // module: "all" 回傳的每一筆 TYPE 都是 "ALL"，但函式簽章的回傳型別是
+    // BalanceSheet|CashFlow|Financials|All 的聯合，TS 無法從執行期字串參數靜態窄化，
+    // 需要用 TYPE 判斷才能存取合併後才有的欄位（EBIT、interestExpense 等）。
+    const latest = last?.TYPE === "ALL" ? last : undefined;
+
+    return {
+      ebit: latest?.EBIT ?? null,
+      interestExpense: latest?.interestExpense ?? null,
+      freeCashFlow: latest?.freeCashFlow ?? null,
+      totalRevenue: latest?.totalRevenue ?? null,
+    };
+  } catch {
+    return { ebit: null, interestExpense: null, freeCashFlow: null, totalRevenue: null };
+  }
+}
+
+/**
+ * 取得基本面資料。debtToEquity / currentRatio / revenueGrowthYoy 取自 Yahoo 的
+ * financialData 模組，peRatio 取自 summaryDetail，interestCoverageRatio 與
+ * freeCashFlowMargin 則由 fetchIncomeAndCashFlowSnapshot 取得的 EBIT／利息費用／
+ * 自由現金流／營收換算而來（見該函式註解）。
  */
 export async function fetchFundamentalData(
   ticker: string
@@ -137,12 +178,33 @@ export async function fetchFundamentalData(
     `yahoo:fundamentals:${ticker}`,
     CACHE_TTL.fundamentals,
     async () => {
-      const summary = await yahooFinance.quoteSummary(ticker, {
-        modules: ["financialData", "summaryDetail", "defaultKeyStatistics"],
-      });
+      const [summary, incomeCashFlow] = await Promise.all([
+        yahooFinance.quoteSummary(ticker, {
+          modules: ["financialData", "summaryDetail", "defaultKeyStatistics"],
+        }),
+        fetchIncomeAndCashFlowSnapshot(ticker),
+      ]);
 
       const financialData = summary.financialData;
       const mostRecentQuarter = summary.defaultKeyStatistics?.mostRecentQuarter;
+
+      // 利息保障倍數 = EBIT / 利息費用；利息費用缺失或 <= 0（無意義的除法基準）時視為缺失，
+      // 不強行代入極端值。
+      const interestCoverageRatio =
+        incomeCashFlow.ebit !== null &&
+        incomeCashFlow.interestExpense !== null &&
+        incomeCashFlow.interestExpense > 0
+          ? incomeCashFlow.ebit / incomeCashFlow.interestExpense
+          : null;
+
+      // 自由現金流利潤率 = 自由現金流 / 營收 * 100；營收缺失時視為缺失，
+      // lib/risk/fundamental.ts 會退回只看 freeCashFlow 正負號的粗略判斷。
+      const freeCashFlowMargin =
+        incomeCashFlow.freeCashFlow !== null &&
+        incomeCashFlow.totalRevenue !== null &&
+        incomeCashFlow.totalRevenue > 0
+          ? (incomeCashFlow.freeCashFlow / incomeCashFlow.totalRevenue) * 100
+          : null;
 
       return {
         ticker,
@@ -153,9 +215,12 @@ export async function fetchFundamentalData(
           financialData?.debtToEquity != null
             ? financialData.debtToEquity / 100
             : null,
-        interestCoverageRatio: null,
+        interestCoverageRatio,
         currentRatio: financialData?.currentRatio ?? null,
-        freeCashFlow: financialData?.freeCashflow ?? null,
+        // 優先用 fundamentalsTimeSeries 的數字（跟 freeCashFlowMargin 同一來源、口徑一致），
+        // 抓不到時退回 quoteSummary 的 financialData.freeCashflow 當備援
+        freeCashFlow: incomeCashFlow.freeCashFlow ?? financialData?.freeCashflow ?? null,
+        freeCashFlowMargin,
         peRatio: summary.summaryDetail?.trailingPE ?? null,
         // Yahoo 回傳的 revenueGrowth 為小數比例（如 0.05 代表 5%），換算為百分比
         revenueGrowthYoy:
