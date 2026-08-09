@@ -62,3 +62,56 @@ export const STOCK_NAME_ALIASES: Record<string, string> = {
 export function resolveAliasTicker(query: string): string | null {
   return STOCK_NAME_ALIASES[query.trim()] ?? null;
 }
+
+/**
+ * 代碼 → 中文公司名稱對照表，用於覆蓋搜尋結果顯示名稱。
+ *
+ * Yahoo Finance 回傳的 longname/shortname 一律是英文全名（例如「Taiwan Semiconductor
+ * Manufacturing Company Limited」），即使查詢字串是中文也一樣，搜尋結果列表直接顯示
+ * 會很不直覺。這裡沿用 STOCK_NAME_ALIASES 收錄的股票，反過來對照回最常用的中文名稱；
+ * 只覆蓋這份表有收錄的代碼，其餘代碼（使用者用英文名稱或不在表中的代碼查到的）
+ * 維持顯示 Yahoo 原始名稱。
+ */
+export const TICKER_DISPLAY_NAMES: Record<string, string> = {
+  "2330.TW": "台積電",
+  "2317.TW": "鴻海",
+  "2454.TW": "聯發科",
+  "2308.TW": "台達電",
+  "2382.TW": "廣達",
+  "2881.TW": "富邦金",
+  "2882.TW": "國泰金",
+  "1301.TW": "台塑",
+  "2412.TW": "中華電",
+  "1216.TW": "統一",
+  "3008.TW": "大立光",
+  "2303.TW": "聯電",
+  "3711.TW": "日月光投控",
+  "2884.TW": "玉山金",
+  "2886.TW": "兆豐金",
+  "1101.TW": "台泥",
+  "1303.TW": "南亞",
+  "2002.TW": "中鋼",
+  "2207.TW": "和泰車",
+  "4938.TW": "和碩",
+  "2324.TW": "仁寶",
+  "3231.TW": "緯創",
+  "2357.TW": "華碩",
+  "2353.TW": "宏碁",
+  "2327.TW": "國巨",
+  "2891.TW": "中信金",
+  "2892.TW": "第一金",
+  "5880.TW": "合庫金",
+  "2890.TW": "永豐金",
+  "2885.TW": "元大金",
+  "2887.TW": "台新金",
+  "4904.TW": "遠傳",
+  "3045.TW": "台灣大",
+  "2201.TW": "裕隆",
+  "2603.TW": "長榮",
+  "2609.TW": "陽明",
+  "2615.TW": "萬海",
+  "2633.TW": "台灣高鐵",
+  "2610.TW": "中華航",
+  "2618.TW": "長榮航",
+  "6488.TWO": "環球晶",
+};

@@ -11,7 +11,7 @@ import type {
 } from "@/types/market";
 import { CACHE_TTL, getOrSetCache } from "./cache";
 import { calculateAnnualizedVolatility, calculateMaxDrawdown } from "./metrics";
-import { resolveAliasTicker } from "./stockAliases";
+import { resolveAliasTicker, TICKER_DISPLAY_NAMES } from "./stockAliases";
 
 /**
  * yahoo-finance2 是非官方 API（無需金鑰），行為可能隨 Yahoo 網站調整而變動。
@@ -341,7 +341,9 @@ export async function searchStocks(query: string): Promise<StockSearchResult[]> 
         )
         .map((q) => ({
           ticker: q.symbol,
-          name: q.longname ?? q.shortname ?? q.symbol,
+          // Yahoo 回傳的公司名稱一律是英文全名，即使查詢字串是中文也一樣；
+          // 有收錄在 TICKER_DISPLAY_NAMES 的代碼改顯示中文名稱，其餘維持 Yahoo 原名
+          name: TICKER_DISPLAY_NAMES[q.symbol] ?? q.longname ?? q.shortname ?? q.symbol,
           exchange: q.exchDisp ?? null,
         }));
 
