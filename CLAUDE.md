@@ -8,8 +8,21 @@
 ## What
 - 技術棧：Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui + Zustand
 - 核心功能：使用者風險問卷、個股多因子風險評分、風險匹配推薦
-- 資料來源：Yahoo Finance（報價、基本面、產業 ETF 相對表現，支援 `.TW` 上市／`.TWO` 上櫃代碼）
+- 資料來源：Yahoo Finance（報價、基本面、產業 ETF 相對表現，支援 `.TW` 上市／`.TWO` 上櫃代碼）、
+  中央銀行（政策利率）、主計總處（失業率）
 - 重要：本系統僅為研究輔助工具，不構成投資建議，需有明顯 Disclaimer
+
+## 台灣總經指標資料源
+
+`lib/risk/macroSector.ts` 的三個總經子指標中，兩個已接上官方免費資料源：
+
+- **政策利率**（`lib/data/cbc.ts`）：中央銀行重貼現率 CSV，
+  `https://www.cbc.gov.tw/Public/Data/opendata/webF1.csv`，免金鑰、不定期更新（利率調整時才變動）。
+- **失業率**（`lib/data/dgbas.ts`）：主計總處人力資源調查失業率 XML，
+  `https://ws.dgbas.gov.tw/001/Upload/461/relfile/11525/230038/mp0101a07.xml`，免金鑰、每月更新。
+  這個網域的 TLS 憑證鏈不完整（伺服器沒送出中繼憑證，只有 Windows 的憑證驗證會自動補），
+  已在 `dgbas.ts` 內手動附上正確的中繼憑證並改用 `node:https`（Node 全域 `fetch()` 不吃
+  自訂 CA agent）解決，細節見該檔案註解。
 
 ## v1 已知資料缺口（明確排除，不是 bug）
 
@@ -20,11 +33,11 @@
 - **新聞情緒分析**：Finnhub 免費方案對台股回傳 `"You don't have access to this resource."`，
   Yahoo Finance 附帶的新聞也不是台股相關新聞。`sentimentEvent` 因子固定以中性值代入
   （`lib/data/buildStockRiskInputs.ts` 的 `news` 固定傳空陣列）。
-- **台灣總經指標**：FRED 對台灣的月頻總經資料（利率、失業率）覆蓋很薄，
-  `lib/risk/macroSector.ts` 的 `policyRate`／`yieldCurveSpread`／`unemploymentRate`
-  三個子指標固定為 `null`，只有 `vix`（全球 CBOE VIX，近似代理指標）有真實資料。
-- 若之後要補上這兩塊，優先研究：新聞可考慮台灣證交所 MOPS 重大訊息公開資料；
-  總經指標可考慮 data.gov.tw（主計總處／中央銀行開放資料）。
+- **10 年期公債殖利率利差**：台灣公債交易主要在櫃買中心（TPEx）場外市場進行，
+  沒找到公開、即時更新的官方殖利率 API（TPEx OpenAPI 最接近的 `/bond_ISSBD1_data`
+  只有發標時的資料，不是連續市場殖利率，拿來近似會失真，故不採用）。
+  `macroSector.ts` 的 `treasuryYield10Y` 子指標固定為 `null`。
+- 若之後要補上新聞：可考慮台灣證交所 MOPS 重大訊息公開資料。
 
 ## How
 ### Commands
